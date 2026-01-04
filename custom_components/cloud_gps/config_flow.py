@@ -645,7 +645,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     self._errors["base"] = status.get("error")
                     return await self._show_config_form(user_input)
                 
-                if status.get("response").text != "Nothing to see here.":
+                if status.get("response").text != "Nothing to see here":
                     _LOGGER.error("服务器参数不正确，返回的值提示服务器不正确。 %s", status.get("error",""))
                     self._errors["base"] = "服务器参数不正确，返回的值提示服务器不正确。" + status.get("error","")
                     return await self._show_config_form(user_input)
