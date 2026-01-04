@@ -130,50 +130,50 @@ class DataFetcher:
         encoded_credentials = base64.b64encode(userpass.encode('utf-8')).decode('utf-8')
         return "Basic " + encoded_credentials
     
-def json_format_data(self, data):
-    """
-    构建 POST 请求数据
-    ids 应该包含主密钥和所有额外密钥的 hashedAdvKey
-    
-    参数: 
-        data:  设备配置字典，包含 id, hashedAdvKey, additionalHashedAdvKeys
-    
-    返回:
-        格式化的 POST 请求体
-    """
-    accessory_id = data.get("id")
-    
-    # 构建完整的 ids 列表：主密钥 + 额外密钥
-    ids = []
-    
-    # 添加主密钥的 hashedAdvKey
-    main_hashed_key = data. get("hashedAdvKey")
-    if main_hashed_key: 
-        ids.append(main_hashed_key)
-        _LOGGER.debug("Device %s: Added main hashedAdvKey", accessory_id)
-    else:
-        _LOGGER.warning("Device %s: Missing main hashedAdvKey", accessory_id)
-    
-    # 添加额外密钥的 hashedAdvKey
-    additional_hashed_keys = data.get("additionalHashedAdvKeys", [])
-    if additional_hashed_keys:
-        ids.extend(additional_hashed_keys)
-        _LOGGER.debug("Device %s: Added %d additional hashedAdvKeys", 
-                     accessory_id, len(additional_hashed_keys))
-    
-    # 验证 ids 不为空
-    if not ids: 
-        _LOGGER.error("Device %s: No hashedAdvKeys available for POST request", accessory_id)
-    
-    formatted_data = {
-        "accessoryId": accessory_id,
-        "ids":  ids,
-        "days": 1
-    }
-    
-    _LOGGER.debug("Device %s: Formatted POST data with %d keys:  %s", 
-                 accessory_id, len(ids), formatted_data)
-    return formatted_data
+    def json_format_data(self, data):
+        """
+        构建 POST 请求数据
+        ids 应该包含主密钥和所有额外密钥的 hashedAdvKey
+        
+        参数: 
+            data:  设备配置字典，包含 id, hashedAdvKey, additionalHashedAdvKeys
+        
+        返回:
+            格式化的 POST 请求体
+        """
+        accessory_id = data.get("id")
+        
+        # 构建完整的 ids 列表：主密钥 + 额外密钥
+        ids = []
+        
+        # 添加主密钥的 hashedAdvKey
+        main_hashed_key = data. get("hashedAdvKey")
+        if main_hashed_key: 
+            ids.append(main_hashed_key)
+            _LOGGER.debug("Device %s: Added main hashedAdvKey", accessory_id)
+        else:
+            _LOGGER.warning("Device %s: Missing main hashedAdvKey", accessory_id)
+        
+        # 添加额外密钥的 hashedAdvKey
+        additional_hashed_keys = data.get("additionalHashedAdvKeys", [])
+        if additional_hashed_keys:
+            ids.extend(additional_hashed_keys)
+            _LOGGER.debug("Device %s: Added %d additional hashedAdvKeys", 
+                        accessory_id, len(additional_hashed_keys))
+        
+        # 验证 ids 不为空
+        if not ids: 
+            _LOGGER.error("Device %s: No hashedAdvKeys available for POST request", accessory_id)
+        
+        formatted_data = {
+            "accessoryId": accessory_id,
+            "ids":  ids,
+            "days": 1
+        }
+        
+        _LOGGER.debug("Device %s: Formatted POST data with %d keys:  %s", 
+                    accessory_id, len(ids), formatted_data)
+        return formatted_data
     
     def sha256(self, data):
         """SHA256实现，与Dart代码中的_kdf匹配"""
