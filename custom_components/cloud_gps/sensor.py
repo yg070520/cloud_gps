@@ -170,6 +170,11 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         _LOGGER.debug("coordinatordata")
         _LOGGER.debug(coordinatordata)
     
+        device_data = coordinator.data.get(coordinatordata) or {}
+        if not device_data.get("location_key"):
+            _LOGGER.warning("Device %s: data incomplete (no location_key), skip sensor setup this round", coordinatordata)
+            continue
+
         sensors = []
         for sensor_type in enabled_sensors:
             _LOGGER.debug("sensor_type: %s" ,sensor_type)

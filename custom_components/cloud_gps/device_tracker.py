@@ -140,7 +140,8 @@ class CloudGPSEntity(RestoreEntity, TrackerEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self.async_update()
+        self._load_state()
+        self.async_write_ha_state()
 
     async def async_added_to_hass(self):
         """Connect to dispatcher and restore state."""

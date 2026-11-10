@@ -168,7 +168,7 @@ class DataFetcher:
         formatted_data = {
             "accessoryId": accessory_id,
             "ids":  ids,
-            "days": 1
+            "days": 7
         }
         
         _LOGGER.debug("Device %s: Formatted POST data with %d keys:  %s", 
@@ -345,10 +345,7 @@ class DataFetcher:
                     duration = time.time() - start_time
                     _LOGGER.debug("Device %s: Decrypted report in %.3fs", imei, duration)
                     
-                    # 如果找到足够新的数据，提前停止
-                    if decrypted_data['timestamp'].timestamp() > self.lastseentime + 3600:  # 1小时内的新数据
-                        _LOGGER.debug("Device %s: Found sufficiently new data, skipping further reports", imei)
-                        break
+                    # 不再提前 break：datePublished 缺失时返回顺序不可靠，统一交给 max(timestamp) 选最新
                         
                 else:
                     _LOGGER.debug("Device %s: Decryption failed for report", imei)
@@ -449,8 +446,10 @@ class DataFetcher:
                     # 如果没有数据，尝试使用持久化数据
                     _LOGGER.warning("%s No new data available, using persisted data", imei)
                     await self._load_persisted_data()
-                    self.trackerdata[imei] = self._persisted_data.get("trackerdata", {}).get(imei, {})
-                    if not self.trackerdata[imei]:
+                    persisted = self._persisted_data.get("trackerdata", {}).get(imei) or {}
+                    if persisted.get("location_key"):
+                        self.trackerdata[imei] = persisted
+                    if not self.trackerdata.get(imei):
                         _LOGGER.warning("%s No new data available and no persisted data", imei)
                         _LOGGER.warning("请将此%s_devices.json在web端或app端导入测试成功后再加入", imei)
                     continue
@@ -480,9 +479,8 @@ class DataFetcher:
                     key_map = {}
                     
                     # 添加主密钥对
-                    if "hashedAdvKey" in target_device_config and "privateKey" in target_device_config:
-                        main_hashed_key = target_device_config["hashedAdvKey"]
-                        main_private_key = target_device_config["privateKey"]
+                    main_hashed_key = target_device_config.get("hashedAdvKey")
+                    main_private_key = target_device_config.get("privateKey")
                         
                     if main_hashed_key and main_private_key:  # 确保值不为空
                         key_map[main_hashed_key] = main_private_key
@@ -521,17 +519,19 @@ class DataFetcher:
                         # 如果没有新数据，尝试使用持久化数据
                         _LOGGER.warning("%s No new data available, using persisted data", imei)
                         await self._load_persisted_data()
-                        self.trackerdata[imei] = self._persisted_data.get("trackerdata", {}).get(imei, {})
-                        if not self.trackerdata[imei]:
+                        persisted = self._persisted_data.get("trackerdata", {}).get(imei) or {}
+                        if persisted.get("location_key"):
+                            self.trackerdata[imei] = persisted
+                        if not self.trackerdata.get(imei):
                             _LOGGER.warning("%s No new data available and no persisted data", imei)
                             _LOGGER.warning("请将此%s_devices.json在web端或app端导入测试成功后再加入", imei)
                         continue
 
                     # 按报告时间降序排序，优先处理最新报告
-                    matched_reports_for_this_device.sort(key=lambda x: x.get("datePublished", 0), reverse=True)
+                    matched_reports_for_this_device.sort(key=lambda x: x.get("datePublished") or 0, reverse=True)
                     
                     # 限制最大解密报告数量
-                    MAX_REPORTS_PER_DEVICE = 5  # 每台设备最多解密5份报告
+                    MAX_REPORTS_PER_DEVICE = 20  # 每台设备最多解密20份报告
                     if len(matched_reports_for_this_device) > MAX_REPORTS_PER_DEVICE:
                         _LOGGER.debug("Device %s: Limiting reports from %d to %d", 
                                      imei, len(matched_reports_for_this_device), MAX_REPORTS_PER_DEVICE)
@@ -555,19 +555,23 @@ class DataFetcher:
                     
                     # 如果没有解密出任何数据，继续下一个设备
                     if not all_decrypted_data:
-                        _LOGGER.debug("Device %s: No reports successfully decrypted.", imei)
+                        _LOGGER.warning("Device %s: No reports successfully decrypted (%d reports tried).", imei, len(matched_reports_for_this_device))
                         continue
                         
                     # 找出时间戳最新的解密数据
                     # 注意：decrypted_data['timestamp'] 是 datetime 对象
                     latest_decrypted = max(all_decrypted_data, key=lambda x: x['timestamp'])
+                    _LOGGER.debug(
+                        "Device %s: decrypted %d report(s), newest=%s lat=%s lon=%s acc=%s",
+                        imei, len(all_decrypted_data), latest_decrypted.get('isodatetime'),
+                        latest_decrypted.get('lat'), latest_decrypted.get('lon'), latest_decrypted.get('accuracy'),
+                    )
                     
                     # 检查这个最新时间戳是否比上次记录的时间更新
                     if int(latest_decrypted['timestamp'].timestamp()) > self.lastseentime or self.trackerdata.get(imei)==None:
                         _LOGGER.debug("Device %s: Using latest decrypted data with isodatetime: %s", imei, latest_decrypted['isodatetime'])
                         
-                        # 更新 lastseentime
-                        self.lastseentime = int(latest_decrypted['timestamp'].timestamp())
+                        # lastseentime 改为写入 trackerdata 成功后再更新，避免异常把它锁死
 
                         # 处理解密数据
                         lastseen = latest_decrypted.get('isodatetime')            
@@ -577,7 +581,6 @@ class DataFetcher:
                         battery_status = latest_decrypted.get('battery_status')
                         status = latest_decrypted.get('status')
                         
-                        self.trackerdata[imei] = {}
                         self.deviceinfo[imei] = latest_decrypted
                         self.deviceinfo[imei]["device_model"] = "macless_haystack"
                         self.deviceinfo[imei]["sw_version"] = "1.0"
@@ -585,11 +588,12 @@ class DataFetcher:
                         attrs ={
                             "querytime": querytime,
                             "lastseen": datetime.datetime.fromisoformat(lastseen).astimezone(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S'),
-                            "latest_report_time": datetime.datetime.fromtimestamp(int(latest_decrypted['report_time'])/1000).strftime("%Y-%m-%d %H:%M:%S"),
+                            "latest_report_time": datetime.datetime.fromtimestamp(float(latest_decrypted['report_time'])/1000).strftime("%Y-%m-%d %H:%M:%S") if latest_decrypted.get('report_time') else datetime.datetime.fromisoformat(lastseen).astimezone(ZoneInfo('Asia/Shanghai')).strftime("%Y-%m-%d %H:%M:%S"),
                             "battery_status": battery_status,
                         }
                                             
-                        self.trackerdata[imei] = {"location_key":self.location_key+imei,"deviceinfo":self.deviceinfo[imei],"thislat":thislat,"thislon":thislon,"accuracy":accuracy,"source_type":"bluetooth_le","imei":imei,"status":status,"attrs":attrs}
+                        self.trackerdata[imei] = {"location_key":str(self.location_key)+str(imei),"deviceinfo":self.deviceinfo[imei],"thislat":thislat,"thislon":thislon,"accuracy":accuracy,"source_type":"bluetooth_le","imei":imei,"status":status,"attrs":attrs}
+                        self.lastseentime = int(latest_decrypted['timestamp'].timestamp())
                         await self._persist_data()
                     else:
                         _LOGGER.debug("Device %s: Latest decrypted data is not newer than existing data. Latest timestamp: %s, Last seen: %s", 
